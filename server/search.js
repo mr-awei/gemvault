@@ -1,0 +1,329 @@
+import sharp from 'sharp';
+import { db } from './db.js';
+import { computePHash, computeDHash, hammingHex, hashPopcount } from './phash.js';
+import * as lib from './library.js';
+import * as clip from './clip.js';
+import * as ai from './ai.js';
+
+/* ------------------------------- 颜色工具 ------------------------------- */
+
+function hexToRgb(hex) {
+  if (!hex) return null;
+  const h = String(hex).trim().replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return null;
+  return {
+    r: parseInt(full.slice(0, 2), 16),
+    g: parseInt(full.slice(2, 4), 16),
+    b: parseInt(full.slice(4, 6), 16),
+  };
+}
+
+function parsePalette(str) {
+  const out = [];
+  if (!str) return out;
+  let arr = null;
+  try {
+    const v = JSON.parse(str);
+    if (Array.isArray(v)) arr = v;
+  } catch {
+    /* not JSON */
+  }
+  if (!arr) {
+    // 兼容旧格式：纯 hex 字符串或单个 hex
+    if (typeof str === 'string' && str.trim()) out.push({ hex: str.trim(), pop: 1 });
+    return out;
+  }
+  for (const x of arr) {
+    if (typeof x === 'string') out.push({ hex: x, pop: 1 });
+    else if (x && typeof x.h === 'string') out.push({ hex: x.h, pop: typeof x.p === 'number' ? x.p : 0.1 });
+  }
+  return out;
+}
+
+/* 感知均匀颜色空间 OKLab（Björn Ottosson）。相比 CIELAB 更均匀、计算更轻，
+ * 现代主色提取库（color-thief v3 / imagecolorpicker）已默认 OKLCH/OKLab 量化与匹配。
+ * 这里用 OKLab 欧氏距离衡量“感知色差”——属于感知均匀度量，绝非 RGB 欧氏距离。 */
+function srgbToLinear(x) {
+  x /= 255;
+  return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+}
+function rgbToOklab(hex) {
+  const c = hexToRgb(hex);
+  if (!c) return null;
+  const r = srgbToLinear(c.r), g = srgbToLinear(c.g), b = srgbToLinear(c.b);
+  const l_ = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+  const m_ = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+  const s_ = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+  const l = Math.cbrt(l_), m = Math.cbrt(m_), s = Math.cbrt(s_);
+  return {
+    L: 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+    a: 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+    b: 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+  };
+}
+function oklabDist(c1, c2) {
+  const dl = c1.L - c2.L, da = c1.a - c2.a, db = c1.b - c2.b;
+  return Math.sqrt(dl * dl + da * da + db * db);
+}
+function oklabChroma(c) {
+  return Math.hypot(c.a, c.b);
+}
+
+const OKLAB_NEUTRAL_CHROMA = 0.022; // 低于此彩度的颜色视为中性（灰/黑/白）
+const MIN_POP = 0.04;       // 命中色至少要占画面 4% 才纳入结果
+const MIN_POP_TIGHT = 0.01; // 占比不足 4% 时，需 ≥1% 且颜色几乎完全一致才放行
+const TIGHT_DIST = 0.03;    // “几乎完全一致”的 OKLab 距离上限
+
+/**
+ * 颜色打分核心（对标 Eagle 调色板搜索 + MPEG-7 DominantColor；颜色搜索与图库精确颜色筛选共用）：
+ * 给定目标颜色，返回「主色/调色板与之相近」的图片，并按“相似度 × 颜色占比”排序，
+ * 让“画面主色就是该颜色”的图排在最前（精准），同时保留小面积同色作为召回。
+ * 距离用 OKLab 感知均匀空间（非 RGB 欧氏），中性色（黑/白/灰）不会蹭进彩色查询。
+ * tol 为 UI 滑块 0..160，映射到 OKLab 截止距离 ~0..0.5（≈0 几乎同色，越大越宽松）。
+ */
+export function scoreByColor(hex, tol = 48) {
+  const t = rgbToOklab(hex);
+  if (!t) throw new Error('无效的颜色值，请用 #rrggbb');
+  const tChroma = oklabChroma(t);
+  const targetNeutral = tChroma < OKLAB_NEUTRAL_CHROMA || t.L < 0.02 || t.L > 0.98;
+  const cutoff = Math.max(0.001, (Math.max(0, Math.min(160, tol)) / 160) * 0.5);
+  const SCALE = 0.12; // 距离对质量的衰减尺度：越小越强调“颜色要近”
+
+  const rows = db
+    .prepare("SELECT id, dominant, palette FROM images WHERE dominant <> '' OR palette <> ''")
+    .all();
+  const scored = [];
+  for (const r of rows) {
+    const pal = parsePalette(r.palette);
+    const colors = pal.length ? pal : r.dominant ? [{ hex: r.dominant, pop: 1 }] : [];
+    let best = null;
+    for (const c of colors) {
+      const lab = rgbToOklab(c.hex);
+      if (!lab) continue;
+      const chroma = oklabChroma(lab);
+      if (targetNeutral) {
+        // 查询是黑/白/灰：只与同样中性的颜色匹配，并以其占比加权
+        if (chroma >= OKLAB_NEUTRAL_CHROMA && lab.L >= 0.02 && lab.L <= 0.98) continue;
+      } else {
+        // 彩色查询：跳过中性色候选，避免灰图蹭进彩色结果
+        if (chroma < OKLAB_NEUTRAL_CHROMA || lab.L < 0.02 || lab.L > 0.98) continue;
+      }
+      const d = oklabDist(t, lab);
+      if (d > cutoff) continue;
+      // 精度门槛：该颜色必须在画面里占到一定比例才算“有这种颜色”，
+      // 否则 0.03% 的红色噪点会把整张图拽进红色结果（召回变噪音）。
+      // 占比不足时，只有颜色几乎完全一致（d ≤ TIGHT_DIST）且至少 ~1% 存在感才放行。
+      if (c.pop < MIN_POP && !(c.pop >= MIN_POP_TIGHT && d <= TIGHT_DIST)) continue;
+      const pop = Math.max(0.01, c.pop);
+      // 质量 = 颜色占比 × 距离衰减：主色图优先，但远处小色块也保留为召回
+      const quality = pop * Math.exp(-d / SCALE);
+      if (!best || quality > best.quality) best = { quality, d, hex: c.hex, pop };
+    }
+    if (best) scored.push({ id: r.id, ...best });
+  }
+  scored.sort((a, b) => b.quality - a.quality);
+  return scored;
+}
+
+/** 颜色搜索：打分后取前 limit 个，回填完整 DTO 与命中信息 */
+export function searchByColor(hex, tol = 48, limit = 120) {
+  const scored = scoreByColor(hex, tol);
+  const ids = scored.slice(0, limit).map((s) => s.id);
+  if (!ids.length) return [];
+  const placeholders = ids.map(() => '?').join(',');
+  const map = new Map(
+    db.prepare(`SELECT * FROM images WHERE id IN (${placeholders})`).all(...ids).map((r) => [r.id, r])
+  );
+  const scoreMap = new Map(scored.map((s) => [s.id, s]));
+  return ids
+    .map((id) => {
+      const row = map.get(id);
+      if (!row) return null;
+      const dto = lib.toDTO(row);
+      const sc = scoreMap.get(id);
+      dto.matchHex = sc?.hex;
+      dto.dist = sc ? Math.round(sc.d * 1000) / 1000 : undefined;
+      return dto;
+    })
+    .filter(Boolean);
+}
+
+/* ------------------------------- 以图搜图（视觉搜索） ------------------------------- */
+
+/**
+ * 以图搜图：计算上传图的 pHash，找出感知哈希最接近的图（近邻 = 同一张/相似构图）。
+ * maxHamming 越大越宽松（0=完全相同，10 左右=高度相似）。
+ *
+ * 误匹配治理（参考 PhotoPrism / image-match 的本地做法）：
+ * 1. 纯色、近黑的图 pHash 会退化（几乎全 0 或全 1），彼此汉明距离很近却毫不相干——
+ *    查询图或候选图哈希信息量过低时，只接受「几乎完全相同」的距离；
+ * 2. 对 pHash 粗筛出的候选，重读文件再算一次 dHash（梯度哈希）做第二重校验，
+ *    两个哈希都接近才算命中，避免暗色图撞 pHash 带出的无关结果。
+ */
+export async function searchByImageBuffer(buffer, { limit = 24, maxHamming = 10 } = {}) {
+  // CLIP 深度特征优先：对裁剪/旋转/加滤镜的同类图远比哈希鲁棒（模型未就绪时自动退回哈希方案）
+  if (clip.clipReady()) {
+    try {
+      const vec = await clip.embedImage(buffer);
+      const hits = clip.topSimilar(vec, { k: limit, minCos: 0.82 });
+      if (hits.length) {
+        const byId = new Map(hits.map((h) => [h.id, h.cos]));
+        const rows = db
+          .prepare(`SELECT * FROM images WHERE id IN (${hits.map(() => '?').join(',')})`)
+          .all(...hits.map((h) => h.id));
+        const sorted = rows.sort((a, b) => byId.get(b.id) - byId.get(a.id));
+        return sorted.map((r) => ({ ...lib.toDTO(r), cos: +byId.get(r.id).toFixed(4) }));
+      }
+    } catch (err) {
+      console.error('[clip] 以图搜图失败，退回哈希方案', err?.message || err);
+    }
+  }
+
+  const phash = await computePHash(buffer);
+  if (!phash) throw new Error('无法读取图片');
+  const dhash = await computeDHash(buffer);
+  // 查询图信息量过低（纯色/纯黑屏截图等）时，pHash 距离不可信
+  const weakQuery = hashPopcount(phash) <= 6 || hashPopcount(phash) >= 58;
+
+  const rows = db.prepare("SELECT * FROM images WHERE phash <> ''").all();
+  const scored = [];
+  for (const r of rows) {
+    const d = hammingHex(phash, r.phash);
+    if (d > maxHamming) continue;
+    // 候选图自身哈希退化，且不是几乎完全相同 → 大概率是暗色图撞哈希，直接丢弃
+    if (!weakQuery && (hashPopcount(r.phash) <= 6 || hashPopcount(r.phash) >= 58) && d > 2) continue;
+    scored.push({ row: r, dist: d });
+  }
+  scored.sort((a, b) => a.dist - b.dist);
+
+  // 第二重校验：只对头部候选重算 dHash（读原图，本地库里几十张的开销可以接受）
+  const dhashLimit = Math.max(12, maxHamming + 2);
+  const verified = [];
+  const candidates = scored.slice(0, Math.max(limit, 24));
+  for (const c of candidates) {
+    if (dhash && !weakQuery) {
+      try {
+        const dh = await computeDHash(c.row.thumb || c.row.abs_path);
+        if (dh && hammingHex(dhash, dh) > dhashLimit) continue; // pHash 近但 dHash 远 → 无关图
+      } catch {
+        /* 文件读不到就不拦（缩略图会显示文件缺失） */
+      }
+    }
+    verified.push(c);
+  }
+
+  return verified.slice(0, limit).map((s) => ({ ...lib.toDTO(s.row), hamming: s.dist }));
+}
+
+export async function searchByImageDataUrl(dataUrl, opts = {}) {
+  const m = String(dataUrl || '').match(/^data:image\/[a-zA-Z+]+;base64,(.+)$/);
+  if (!m) throw new Error('需要 base64 图片（data:image/...;base64,...）');
+  const buffer = Buffer.from(m[1], 'base64');
+  return searchByImageBuffer(buffer, opts);
+}
+
+export async function searchByImagePath(filePath, opts = {}) {
+  const buffer = await sharp(filePath, { failOn: 'none' }).toBuffer();
+  return searchByImageBuffer(buffer, opts);
+}
+
+/* ------------------------------- AI 语义 / 视觉搜索 ------------------------------- */
+
+/**
+ * AI 语义搜索：把自然语言交给 LLM，转成「结构化过滤条件 + 关键词」，再在本地库检索。
+ * 复用现有 OpenAI 兼容 AI（无需 embedding）。未配置 AI 时自动退化为纯关键词搜索。
+ */
+export async function aiSearch(query, { limit = 60 } = {}) {
+  const q = String(query || '').trim();
+  if (!q) return [];
+
+  let filters = {};
+  let keywords = [];
+
+  if (ai.aiStatus().ready) {
+    try {
+      const parsed = await ai.chatJson(
+        [
+          {
+            role: 'system',
+            content:
+              '你是图库检索助手。用户用自然语言描述想要的图片，请输出严格 JSON：' +
+              '{"filters":{"favorite":"yes"|"no"|null,"minRating":0,"orientation":"landscape"|"portrait"|"square"|null,' +
+              '"source":null,"minWidth":0,"minScore":0,"tagsInclude":[]},"keywords":["用于匹配画面内容/场景/人物的词，如 山、演唱会、舞台、微笑、红色"]}。' +
+              '只输出 JSON，不要解释。',
+          },
+          { role: 'user', content: q },
+        ],
+        { temperature: 0.1, timeout: 8000 }
+      );
+      filters = parsed?.filters || {};
+      keywords = Array.isArray(parsed?.keywords) ? parsed.keywords : [];
+    } catch {
+      // LLM 失败则退化
+    }
+  }
+
+  // 没有 AI 或解析失败时，用整句做关键词
+  if (!keywords.length) keywords = [q];
+
+  return runStructuredSearch(filters, keywords, limit);
+}
+
+/** 结构化条件 + 关键词混合检索（本地 SQL，零额外依赖） */
+export function runStructuredSearch(filters = {}, keywords = [], limit = 60) {
+  const where = [];
+  const params = [];
+
+  const fav = filters?.favorite;
+  if (fav === 'yes') where.push('favorite = 1');
+  else if (fav === 'no') where.push('favorite = 0');
+
+  if (filters?.minRating > 0) {
+    where.push('rating >= ?');
+    params.push(Number(filters.minRating));
+  }
+  if (filters?.minScore > 0) {
+    where.push('score >= ?');
+    params.push(Number(filters.minScore));
+  }
+  if (filters?.minWidth > 0) {
+    where.push('MAX(width, height) >= ?');
+    params.push(Number(filters.minWidth));
+  }
+  const ori = filters?.orientation;
+  if (ori === 'landscape') where.push('width > height * 1.15');
+  else if (ori === 'portrait') where.push('height > width * 1.15');
+  else if (ori === 'square') where.push('ABS(width - height) <= width * 0.15');
+
+  const src = filters?.source;
+  if (typeof src === 'string' && src) {
+    where.push('source = ?');
+    params.push(src);
+  }
+
+  const inc = Array.isArray(filters?.tagsInclude) ? filters.tagsInclude.filter(Boolean) : [];
+  for (const t of inc) {
+    // 标签倒排表（item_tags，触发器自动同步）：主键索引精确命中，替代此前的
+    // (','||tags||',') LIKE '%,tag,%' 全表扫描；语义一致（完整标签匹配）
+    where.push('id IN (SELECT image_id FROM item_tags WHERE tag = ?)');
+    params.push(String(t).trim());
+  }
+
+  // 关键词：匹配标题 / 标签 / 采集词 / 备注 / AI 看图描述
+  const kwList = (keywords || []).map((k) => String(k).trim()).filter(Boolean);
+  if (kwList.length) {
+    const like = kwList
+      .map(() => '(title LIKE ? OR tags LIKE ? OR keyword LIKE ? OR note LIKE ? OR id IN (SELECT image_id FROM ai_desc WHERE description LIKE ?))')
+      .join(' AND ');
+    for (const k of kwList) {
+      const p = `%${k}%`;
+      params.push(p, p, p, p, p);
+    }
+    where.push(`(${like})`);
+  }
+
+  const sql = `SELECT * FROM images ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY score DESC, created_at DESC LIMIT ?`;
+  const rows = db.prepare(sql).all(...params, limit);
+  return rows.map(lib.toDTO);
+}

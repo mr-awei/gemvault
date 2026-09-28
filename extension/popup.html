@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        width: 300px;
+        margin: 0;
+        padding: 14px;
+        font: 13px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #17171f;
+        color: #eee;
+      }
+      h3 { margin: 0 0 10px; font-size: 14px; }
+      label { display: block; margin-top: 8px; color: #9aa; font-size: 12px; }
+      input, button { width: 100%; box-sizing: border-box; }
+      input {
+        margin-top: 4px; padding: 6px 8px; border-radius: 6px; border: 1px solid #333; background: #22222c; color: #eee;
+      }
+      button {
+        margin-top: 10px; padding: 8px 10px; border: none; border-radius: 8px; background: #ff4d6d; color: #fff; cursor: pointer; font-weight: 600;
+      }
+      button.ghost { background: #2a2a35; }
+      #msg { margin-top: 10px; font-size: 12px; color: #9c9; min-height: 18px; }
+    </style>
+  </head>
+  <body>
+    <h3>图库采集助手</h3>
+    <label>关键词（存库时用）
+      <input id="kw" placeholder="留空则按页面标题" />
+    </label>
+    <label>标签（可选，多个用逗号分隔）
+      <input id="tags" placeholder="如：写真,舞台" />
+    </label>
+    <button id="batch">抓取本页所有图片</button>
+    <button id="shot" class="ghost">截取可见区域</button>
+    <div id="msg"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>

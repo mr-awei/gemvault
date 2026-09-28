@@ -1,0 +1,27 @@
+node_modules/
+dist/
+release-build/
+data/
+storage/
+docs/
+
+# 密钥与运行时状态（勿入库）
+.api-token
+.port
+*.pid
+e_pid.txt
+
+# 日志与临时输出
+*.log
+*.err
+tsconfig.tsbuildinfo
+
+# 本地工具状态
+.codebuddy/
+
+# 环境变量与系统文件
+.env
+.env.*
+*.local
+.DS_Store
+Thumbs.db

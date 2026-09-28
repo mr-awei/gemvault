@@ -1,0 +1,47 @@
+/* 批量操作栏 —— 自 styles.css 机械拆分（原第 1658–1703 行）；import 顺序见 styles.css 入口 */
+
+/* ------------------------------ 批量操作栏 ------------------------------ */
+
+.bulk-bar {
+  position: fixed;
+  left: calc(var(--sidebar-w) + 30px);
+  right: 30px;
+  bottom: 52px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-radius: 14px;
+  background: var(--surface-bulk);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  animation: rise 0.2s ease;
+}
+@keyframes rise {
+  from {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@media (max-width: 860px) {
+  .bulk-bar {
+    left: 14px;
+    right: 14px;
+    flex-wrap: wrap;
+  }
+  .sidebar {
+    width: 68px;
+    flex: 0 0 68px;
+  }
+  .logo-text,
+  .nav-item span,
+  .sidebar-footer {
+    display: none;
+  }
+}

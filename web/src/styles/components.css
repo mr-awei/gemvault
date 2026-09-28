@@ -1,0 +1,171 @@
+/* 通用组件：吸顶头 / 按钮 / 输入 / chips —— 自 styles.css 机械拆分（原第 256–425 行）；import 顺序见 styles.css 入口 */
+
+/* -------------------------------- 通用组件 ------------------------------- */
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.page-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: 0.3px;
+}
+.page-sub {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin-top: 4px;
+}
+
+/* 页头 + 筛选栏常驻吸顶（图片从其下方滚过） */
+.sticky-head {
+  position: sticky;
+  top: -22px;
+  z-index: 30;
+  margin: -22px -26px 14px;
+  padding: 22px 26px 12px;
+  background: var(--surface-head);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 15px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  transition: all 0.16s ease;
+  white-space: nowrap;
+}
+.btn:hover {
+  background: var(--panel-strong);
+  transform: translateY(-1px);
+}
+.btn.primary {
+  background: var(--gradient);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 8px 22px rgba(255, 77, 141, 0.28);
+}
+.btn.primary:hover {
+  filter: brightness(1.08);
+}
+.btn.danger {
+  color: var(--err);
+  border-color: rgba(248, 113, 113, 0.35);
+}
+.btn.danger:hover {
+  background: rgba(248, 113, 113, 0.14);
+}
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+.btn.sm {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.input,
+.select {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 9px 12px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+.input:focus,
+.select:focus {
+  border-color: rgba(255, 77, 141, 0.6);
+  background: rgba(255, 255, 255, 0.07);
+}
+/* 下拉选项统一暗色（原生弹出层白底白字问题） */
+option {
+  background: #12121f;
+  color: #ececf6;
+}
+select {
+  color-scheme: dark;
+}
+
+.chip {
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  transition: all 0.16s ease;
+}
+.chip:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.chip.active {
+  background: linear-gradient(135deg, rgba(255, 77, 141, 0.22), rgba(168, 85, 247, 0.2));
+  border-color: rgba(255, 77, 141, 0.5);
+  color: #fff;
+}
+/* 次要操作按钮（如「全部标记为已看」），弱化但不抢眼 */
+.chip.ghost-chip {
+  border-style: dashed;
+  color: var(--accent);
+  border-color: rgba(255, 77, 141, 0.4);
+}
+.chip.ghost-chip:hover {
+  background: rgba(255, 77, 141, 0.12);
+  color: var(--text);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.search-box {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+  max-width: 340px;
+}
+.search-box .input {
+  width: 100%;
+  padding-left: 34px;
+}
+.search-box .icon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0.5;
+  font-size: 13px;
+}

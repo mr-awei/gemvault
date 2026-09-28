@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "图库采集助手",
+  "version": "1.0.0",
+  "description": "右键采集网页图片 / 批量抓取 / 截图，直接存入本地图库（GemVault）",
+  "permissions": ["contextMenus", "activeTab", "scripting", "downloads", "storage", "tabs"],
+  "host_permissions": ["http://127.0.0.1:3001/*", "http://localhost:3001/*"],
+  "action": {
+    "default_title": "图库采集助手",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {}
+}

@@ -1,0 +1,211 @@
+/* 大图预览 Lightbox —— 自 styles.css 机械拆分（原第 860–1069 行）；import 顺序见 styles.css 入口 */
+
+/* ------------------------------- Lightbox ------------------------------- */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(6, 6, 12, 0.86);
+  backdrop-filter: blur(14px);
+  display: flex;
+  flex-direction: column;
+  animation: fade 0.18s ease;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.lightbox-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.lightbox-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  min-height: 0;
+  position: relative;
+}
+.lightbox-body img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+.lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(20, 20, 32, 0.7);
+  color: #fff;
+  font-size: 18px;
+  display: grid;
+  place-items: center;
+  transition: all 0.16s ease;
+}
+.lightbox-nav:hover {
+  background: var(--accent);
+  border-color: transparent;
+  transform: translateY(-50%) scale(1.08);
+}
+.lightbox-nav.prev {
+  left: 20px;
+}
+.lightbox-nav.next {
+  right: 20px;
+}
+.lightbox-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+  font-size: 12.5px;
+}
+.lightbox-info .meta-item b {
+  display: block;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+.lightbox-hint {
+  color: var(--muted);
+  font-size: 11.5px;
+  opacity: 0.75;
+}
+.lightbox-top .select-sm {
+  padding: 4px 6px;
+  font-size: 12px;
+  background: var(--panel);
+}
+
+/* 缩放比例徽标 */
+.lightbox-zoom {
+  position: absolute;
+  right: 18px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  background: rgba(20, 20, 32, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 12px;
+  z-index: 2;
+}
+.lightbox-zoom button {
+  border: none;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  border-radius: 12px;
+  padding: 2px 9px;
+  font-size: 11.5px;
+}
+.lightbox-zoom button:hover {
+  background: var(--accent);
+}
+
+/* 底部缩略图条 */
+.lightbox-thumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  overflow-x: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  scrollbar-width: thin;
+}
+.lb-thumb {
+  flex: none;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.05);
+  opacity: 0.62;
+  transition: all 0.15s ease;
+}
+.lb-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.lb-thumb:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+.lb-thumb.on {
+  opacity: 1;
+  border-color: var(--accent);
+  box-shadow: 0 4px 14px rgba(255, 77, 141, 0.35);
+}
+.lb-thumb-more {
+  flex: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+/* 幻灯片播放时自动隐藏界面 */
+.lightbox-top,
+.lightbox-info,
+.lightbox-thumbs,
+.lightbox-nav {
+  transition: opacity 0.25s ease;
+}
+.lightbox.hide-chrome .lightbox-top,
+.lightbox.hide-chrome .lightbox-info,
+.lightbox.hide-chrome .lightbox-thumbs,
+.lightbox.hide-chrome .lightbox-nav,
+.lightbox.hide-chrome .lightbox-zoom {
+  opacity: 0;
+  pointer-events: none;
+}
+.tag-editor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tag-editor .tag-pill {
+  background: var(--panel-strong);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.tag-editor .tag-pill button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 0;
+  font-size: 13px;
+}
+.tag-editor .tag-pill button:hover {
+  color: var(--err);
+}
