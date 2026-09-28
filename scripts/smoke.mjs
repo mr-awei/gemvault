@@ -56,6 +56,27 @@ async function waitReady(deadlineMs = 30000) {
 }
 
 try {
+  // 采集结果校验纯函数回归：曾经误写成自递归导致必应/搜狗等源全部
+  // "Maximum call stack size exceeded"（v1.0.0 线上 bug），此处守护不再复发
+  const { sanitizeResults } = await import('../server/sanitize.js');
+  check('sanitize 空输入立即返回', Array.isArray(sanitizeResults([])) && sanitizeResults([]).length === 0);
+  check(
+    'sanitize 去重/过滤/封顶',
+    (() => {
+      const dup = { url: 'https://a.com/x.jpg', source: 't' };
+      const input = [
+        dup,
+        { ...dup },
+        { url: 'ftp://bad/x', source: 't' },
+        { url: 'https://b.com/'.padEnd(2100, 'a'), source: 't' },
+        { url: 'https://c.com/y.jpg', source: 't' },
+        ...Array.from({ length: 300 }, (_, i) => ({ url: `https://d.com/${i}`, source: 't' })),
+      ];
+      const out = sanitizeResults(input);
+      return out.length === 240 && out[0].url === 'https://a.com/x.jpg' && out[1].url === 'https://c.com/y.jpg';
+    })()
+  );
+
   check('服务启动', await waitReady());
 
   // 读自动生成的 API token（wx 独占创建）

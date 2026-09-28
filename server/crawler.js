@@ -1,6 +1,7 @@
 import { db, getSettings } from './db.js';
 import { ingest, KEEP_REASONS } from './library.js';
 import { httpFetch } from './http.js';
+import { sanitizeResults } from './sanitize.js';
 
 const UA_POOL = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -212,21 +213,6 @@ function parseJsonSafe(text, source) {
   } catch {
     throw new Error(`${source} 返回的不是 JSON（可能触发风控或页面已改版）：${String(text).slice(0, 120)}`);
   }
-}
-
-/** 统一轻量 schema 校验：URL 必须 http(s)、限长、去重、封顶。
- *  防止改版页/风控页把脏数据（跟踪链接、html 片段、超长串）直接带进下载队列 */
-function sanitizeResults(list, { limit = 240 } = {}) {
-  const seen = new Set();
-  const out = [];
-  for (const it of list) {
-    const u = String(it?.url || '');
-    if (!/^https?:\/\//i.test(u) || u.length > 2048 || seen.has(u)) continue;
-    seen.add(u);
-    out.push({ ...it, url: u });
-    if (out.length >= limit) break;
-  }
-  return sanitizeResults(out);
 }
 
 /** 堆糖：公开 JSON 接口，photo.path 就是原图直链 */
